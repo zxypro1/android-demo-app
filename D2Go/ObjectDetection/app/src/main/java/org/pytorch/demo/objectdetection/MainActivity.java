@@ -42,11 +42,17 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.StringReader;
+import java.lang.reflect.Array;
 import java.nio.FloatBuffer;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.io.FileInputStream;
 
 public class MainActivity extends AppCompatActivity implements Runnable {
 
@@ -174,7 +180,7 @@ static {
         });
 
         try {
-            mModule = PyTorchAndroid.loadModuleFromAsset(getAssets(), "d2go.pt");
+            mModule = PyTorchAndroid.loadModuleFromAsset(getAssets(), "d2go_model.pt");
 
             BufferedReader br = new BufferedReader(new InputStreamReader(getAssets().open("classes.txt")));
             String line;
@@ -229,57 +235,99 @@ static {
         }
     }
 
+
     @Override
     public void run() {
-        Bitmap resizedBitmap = Bitmap.createScaledBitmap(mBitmap, PrePostProcessor.INPUT_WIDTH, PrePostProcessor.INPUT_HEIGHT, true);
+        Bitmap resizedBitmap = mBitmap;
+//                .createScaledBitmap(mBitmap, PrePostProcessor.INPUT_WIDTH, PrePostProcessor.INPUT_HEIGHT, true);
+        final float[] c = {resizedBitmap.getHeight(),resizedBitmap.getWidth(),1};
 
         final FloatBuffer floatBuffer = Tensor.allocateFloatBuffer(3 * resizedBitmap.getWidth() * resizedBitmap.getHeight());
         TensorImageUtils.bitmapToFloatBuffer(resizedBitmap, 0,0,resizedBitmap.getWidth(),resizedBitmap.getHeight(), PrePostProcessor.NO_MEAN_RGB, PrePostProcessor.NO_STD_RGB, floatBuffer, 0);
+
         final Tensor inputTensor =  Tensor.fromBlob(floatBuffer, new long[] {3, resizedBitmap.getHeight(), resizedBitmap.getWidth()});
+        final Tensor inputTensor2 = Tensor.fromBlob(c, new long[] {1, 3});
+
 
         final long startTime = SystemClock.elapsedRealtime();
-        IValue[] outputTuple = mModule.forward(IValue.listFrom(inputTensor)).toTuple();
+        IValue[] outputTuple = mModule.forward(IValue.from(inputTensor)).toTuple();
+        //IValue[] outputTuple = outputTuple1[0].toTuple();
+        //double scale = outputTuple1[1].toDouble();
+
+        System.out.println(outputTuple.length);
+        System.out.println(Arrays.toString(outputTuple[0].toTensor().getDataAsFloatArray()) +"1");
+        System.out.println("==============================================");
+        //System.out.println(Arrays.toString(outputTuple[1].toTensor().getDataAsLongArray())+"2");
+        //System.out.println(Arrays.toString(outputTuple[2].toTensor().getDataAsFloatArray())+"3");
+        System.out.println(Arrays.toString(outputTuple[3].toTensor().getDataAsFloatArray())+"4");
+        System.out.println("==============================================");
+        System.out.println(Arrays.toString(outputTuple[4].toTensor().getDataAsFloatArray())+"5");
+        System.out.println("==============================================");
+        System.out.println(Arrays.toString(outputTuple[5].toTensor().getDataAsLongArray())+"6");
+        System.out.println("==============================================");
+        System.out.println(resizedBitmap.getWidth());
+        System.out.println(resizedBitmap.getHeight());
+
+//        System.out.println(Arrays.toString(inputTensor.getDataAsFloatArray()));
+        //int size = outputTuple.size();
+        //System.out.println(size);
+        //float[] b = Objects.requireNonNull(outputTuple[Integer.parseInt("scores")]).toTensor().getDataAsFloatArray();
+        //for (float v : b) System.out.println(v);
+//        long[] c = outputTuple[2].getDataAsLongArray();
+//        for (int j=0;j<6;j++)
+//            System.out.println(c[j]);
+//        System.out.println(outputTuple[0].getDataAsFloatArray().length);
+//        System.out.println(outputTuple[1].getDataAsFloatArray().length);
+//        System.out.println(outputTuple[2].getDataAsLongArray().length);
+//        System.out.println(outputTuple[3].getDataAsFloatArray().length);
+//        System.out.println(size);
         final long inferenceTime = SystemClock.elapsedRealtime() - startTime;
         Log.d("D2Go",  "inference time (ms): " + inferenceTime);
 
-        final Map<String, IValue> map = outputTuple[1].toList()[0].toDictStringKey();
+        final Map<String, IValue> map = null;
         float[] boxesData = new float[]{};
         float[] scoresData = new float[]{};
         long[] labelsData = new long[]{};
-        if (map.containsKey("boxes")) {
-            final Tensor boxesTensor = map.get("boxes").toTensor();
-            final Tensor scoresTensor = map.get("scores").toTensor();
-            final Tensor labelsTensor = map.get("labels").toTensor();
-            boxesData = boxesTensor.getDataAsFloatArray();
-            scoresData = scoresTensor.getDataAsFloatArray();
-            labelsData = labelsTensor.getDataAsLongArray();
+        float[] keyPointsData = new float[]{};
+        final Tensor boxesTensor = outputTuple[3].toTensor();
+        final Tensor scoresTensor = outputTuple[4].toTensor();
+        //final Tensor labelsTensor = map.get("pred_classes").toTensor();
+        //final Tensor keyPointsTensor = map.get("pred_keypoints").toTensor();
 
-            final int n = scoresData.length;
-            float[] outputs = new float[n * PrePostProcessor.OUTPUT_COLUMN];
-            int count = 0;
-            for (int i = 0; i < n; i++) {
-                if (scoresData[i] < 0.5)
-                    continue;
+        boxesData = boxesTensor.getDataAsFloatArray();
+        scoresData = scoresTensor.getDataAsFloatArray();
+        //labelsData = labelsTensor.getDataAsLongArray();
+        //keyPointsData = keyPointsTensor.getDataAsFloatArray();
 
-                outputs[PrePostProcessor.OUTPUT_COLUMN * count + 0] = boxesData[4 * i + 0];
-                outputs[PrePostProcessor.OUTPUT_COLUMN * count + 1] = boxesData[4 * i + 1];
-                outputs[PrePostProcessor.OUTPUT_COLUMN * count + 2] = boxesData[4 * i + 2];
-                outputs[PrePostProcessor.OUTPUT_COLUMN * count + 3] = boxesData[4 * i + 3];
-                outputs[PrePostProcessor.OUTPUT_COLUMN * count + 4] = scoresData[i];
-                outputs[PrePostProcessor.OUTPUT_COLUMN * count + 5] = labelsData[i] - 1;
-                count++;
-            }
 
-            final ArrayList<Result> results = PrePostProcessor.outputsToPredictions(count, outputs, mImgScaleX, mImgScaleY, mIvScaleX, mIvScaleY, mStartX, mStartY);
+        final int n = 17;
+        float[] outputs = new float[n * PrePostProcessor.OUTPUT_COLUMN];
+        int count = 0;
+        for (int i = 0; i < n; i++) {
+//                if (scoresData[i] < 0.5)
+//                    continue;
 
-            runOnUiThread(() -> {
-                mButtonDetect.setEnabled(true);
-                mButtonDetect.setText(getString(R.string.detect));
-                mProgressBar.setVisibility(ProgressBar.INVISIBLE);
-                mResultView.setResults(results);
-                mResultView.invalidate();
-                mResultView.setVisibility(View.VISIBLE);
-            });
+            outputs[PrePostProcessor.OUTPUT_COLUMN * count] = boxesData[3 * i];
+            outputs[PrePostProcessor.OUTPUT_COLUMN * count + 1] = boxesData[3 * i + 1];
+            outputs[PrePostProcessor.OUTPUT_COLUMN * count + 2] = boxesData[3 * i];
+            outputs[PrePostProcessor.OUTPUT_COLUMN * count + 3] = boxesData[3 * i + 1];
+//            outputs[PrePostProcessor.OUTPUT_COLUMN * count + 4] = scoresData[i];
+            outputs[PrePostProcessor.OUTPUT_COLUMN * count + 4] = 0;
+            outputs[PrePostProcessor.OUTPUT_COLUMN * count + 5] = 0;
+            count++;
         }
+
+        final ArrayList<Result> results = PrePostProcessor.outputsToPredictions(count, outputs, mImgScaleX, mImgScaleY, mIvScaleX, mIvScaleY, mStartX, mStartY);
+
+        runOnUiThread(() -> {
+            mButtonDetect.setEnabled(true);
+            mButtonDetect.setText(getString(R.string.detect));
+            mProgressBar.setVisibility(ProgressBar.INVISIBLE);
+            mResultView.setResults(results);
+            mResultView.invalidate();
+            mResultView.setVisibility(View.VISIBLE);
+        });
+
     }
+
 }

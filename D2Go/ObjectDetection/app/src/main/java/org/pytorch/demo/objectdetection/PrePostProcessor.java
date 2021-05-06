@@ -8,15 +8,17 @@ package org.pytorch.demo.objectdetection;
 
 import android.graphics.Rect;
 
+import org.apache.commons.math3.geometry.euclidean.twod.Line;
+
 import java.util.ArrayList;
 
 class Result {
-    int classIndex;
-    Float score;
-    Rect rect;
+            int classIndex;
+            Float score;
+            Rect rect;
 
     public Result(int cls, Float output, Rect rect) {
-        this.classIndex = cls;
+                this.classIndex = cls;
         this.score = output;
         this.rect = rect;
     }
@@ -48,6 +50,7 @@ public class PrePostProcessor {
             bottom = imgScaleY * bottom;
 
             Rect rect = new Rect((int)(startX+ivScaleX*left), (int)(startY+top*ivScaleY), (int)(startX+ivScaleX*right), (int)(startY+ivScaleY*bottom));
+
             Result result = new Result((int)outputs[i* OUTPUT_COLUMN +5], outputs[i* OUTPUT_COLUMN +4], rect);
             results.add(result);
         }

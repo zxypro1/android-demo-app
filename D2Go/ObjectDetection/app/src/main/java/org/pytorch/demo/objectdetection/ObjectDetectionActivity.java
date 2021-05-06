@@ -7,6 +7,8 @@ import android.graphics.Matrix;
 import android.graphics.Rect;
 import android.graphics.YuvImage;
 import android.media.Image;
+import android.os.SystemClock;
+import android.util.Log;
 import android.view.TextureView;
 import android.view.ViewStub;
 
@@ -24,6 +26,7 @@ import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Map;
 
 public class ObjectDetectionActivity extends AbstractCameraXActivity<ObjectDetectionActivity.AnalysisResult> {
@@ -85,7 +88,7 @@ public class ObjectDetectionActivity extends AbstractCameraXActivity<ObjectDetec
     @Nullable
     protected AnalysisResult analyzeImage(ImageProxy image, int rotationDegrees) {
         if (mModule == null) {
-            mModule = PyTorchAndroid.loadModuleFromAsset(getAssets(), "d2go.pt");
+            mModule = PyTorchAndroid.loadModuleFromAsset(getAssets(), "d2go_model.pt");
         }
         Bitmap bitmap = imgToBitmap(image.getImage());
         Matrix matrix = new Matrix();
@@ -94,39 +97,82 @@ public class ObjectDetectionActivity extends AbstractCameraXActivity<ObjectDetec
 
         final FloatBuffer floatBuffer = Tensor.allocateFloatBuffer(3 * bitmap.getWidth() * bitmap.getHeight());
         TensorImageUtils.bitmapToFloatBuffer(bitmap, 0,0,bitmap.getWidth(),bitmap.getHeight(), PrePostProcessor.NO_MEAN_RGB, PrePostProcessor.NO_STD_RGB, floatBuffer, 0);
-        final Tensor inputTensor =  Tensor.fromBlob(floatBuffer, new long[] {3, bitmap.getHeight(), bitmap.getWidth()});
 
-        IValue[] outputTuple = mModule.forward(IValue.listFrom(inputTensor)).toTuple();
-        final Map<String, IValue> map = outputTuple[1].toList()[0].toDictStringKey();
+        final Tensor inputTensor =  Tensor.fromBlob(floatBuffer, new long[] {3, bitmap.getHeight(), bitmap.getWidth()});
+        //final Tensor inputTensor2 = Tensor.fromBlob(c, new long[] {1, 3});
+
+
+        final long startTime = SystemClock.elapsedRealtime();
+        IValue[] outputTuple = mModule.forward(IValue.from(inputTensor)).toTuple();
+        //IValue[] outputTuple = outputTuple1[0].toTuple();
+        //double scale = outputTuple1[1].toDouble();
+
+        System.out.println(outputTuple.length);
+        System.out.println(Arrays.toString(outputTuple[0].toTensor().getDataAsFloatArray()) +"1");
+        System.out.println("==============================================");
+        //System.out.println(Arrays.toString(outputTuple[1].toTensor().getDataAsLongArray())+"2");
+        //System.out.println(Arrays.toString(outputTuple[2].toTensor().getDataAsFloatArray())+"3");
+        System.out.println(Arrays.toString(outputTuple[3].toTensor().getDataAsFloatArray())+"4");
+        System.out.println("==============================================");
+        System.out.println(Arrays.toString(outputTuple[4].toTensor().getDataAsFloatArray())+"5");
+        System.out.println("==============================================");
+        System.out.println(Arrays.toString(outputTuple[5].toTensor().getDataAsLongArray())+"6");
+        System.out.println("==============================================");
+        System.out.println(bitmap.getWidth());
+        System.out.println(bitmap.getHeight());
+
+//        System.out.println(Arrays.toString(inputTensor.getDataAsFloatArray()));
+        //int size = outputTuple.size();
+        //System.out.println(size);
+        //float[] b = Objects.requireNonNull(outputTuple[Integer.parseInt("scores")]).toTensor().getDataAsFloatArray();
+        //for (float v : b) System.out.println(v);
+//        long[] c = outputTuple[2].getDataAsLongArray();
+//        for (int j=0;j<6;j++)
+//            System.out.println(c[j]);
+//        System.out.println(outputTuple[0].getDataAsFloatArray().length);
+//        System.out.println(outputTuple[1].getDataAsFloatArray().length);
+//        System.out.println(outputTuple[2].getDataAsLongArray().length);
+//        System.out.println(outputTuple[3].getDataAsFloatArray().length);
+//        System.out.println(size);
+        final long inferenceTime = SystemClock.elapsedRealtime() - startTime;
+        Log.d("D2Go",  "inference time (ms): " + inferenceTime);
+
+        final Map<String, IValue> map = null;
         float[] boxesData = new float[]{};
         float[] scoresData = new float[]{};
         long[] labelsData = new long[]{};
+        float[] keyPointsData = new float[]{};
+        final Tensor boxesTensor = outputTuple[3].toTensor();
+        final Tensor scoresTensor = outputTuple[4].toTensor();
+        //final Tensor labelsTensor = map.get("pred_classes").toTensor();
+        //final Tensor keyPointsTensor = map.get("pred_keypoints").toTensor();
 
-        if (map.containsKey("boxes")) {
-            final Tensor boxesTensor = map.get("boxes").toTensor();
-            final Tensor scoresTensor = map.get("scores").toTensor();
-            final Tensor labelsTensor = map.get("labels").toTensor();
-            boxesData = boxesTensor.getDataAsFloatArray();
-            scoresData = scoresTensor.getDataAsFloatArray();
-            labelsData = labelsTensor.getDataAsLongArray();
+        boxesData = boxesTensor.getDataAsFloatArray();
+        scoresData = scoresTensor.getDataAsFloatArray();
+        //labelsData = labelsTensor.getDataAsLongArray();
+        //keyPointsData = keyPointsTensor.getDataAsFloatArray();
+        int n = 17;
+        if (scoresData.length == 0){
+            n = 0;
+        }
+        float[] outputs = new float[n * PrePostProcessor.OUTPUT_COLUMN];
+        int count = 0;
+        for (int i = 0; i < n; i++) {
+//                if (scoresData[i] < 0.5)
+//                    continue;
 
-            final int n = scoresData.length;
-            int count = 0;
-            float[] outputs = new float[n * PrePostProcessor.OUTPUT_COLUMN];
-            for (int i = 0; i < n; i++) {
-                if (scoresData[i] < 0.4)
-                    continue;
+            outputs[PrePostProcessor.OUTPUT_COLUMN * count] = boxesData[3 * i];
+            outputs[PrePostProcessor.OUTPUT_COLUMN * count + 1] = boxesData[3 * i + 1];
+            outputs[PrePostProcessor.OUTPUT_COLUMN * count + 2] = boxesData[3 * i];
+            outputs[PrePostProcessor.OUTPUT_COLUMN * count + 3] = boxesData[3 * i + 1];
+//            outputs[PrePostProcessor.OUTPUT_COLUMN * count + 4] = scoresData[i];
+            outputs[PrePostProcessor.OUTPUT_COLUMN * count + 4] = 0;
+            outputs[PrePostProcessor.OUTPUT_COLUMN * count + 5] = 0;
+            count++;
+        }
 
-                outputs[PrePostProcessor.OUTPUT_COLUMN * count + 0] = boxesData[4 * i + 0];
-                outputs[PrePostProcessor.OUTPUT_COLUMN * count + 1] = boxesData[4 * i + 1];
-                outputs[PrePostProcessor.OUTPUT_COLUMN * count + 2] = boxesData[4 * i + 2];
-                outputs[PrePostProcessor.OUTPUT_COLUMN * count + 3] = boxesData[4 * i + 3];
-                outputs[PrePostProcessor.OUTPUT_COLUMN * count + 4] = scoresData[i];
-                outputs[PrePostProcessor.OUTPUT_COLUMN * count + 5] = labelsData[i] - 1;
-                count++;
-            }
 
-            float imgScaleX = (float) bitmap.getWidth() / PrePostProcessor.INPUT_WIDTH;
+        float imgScaleX = (float) bitmap.getWidth() / PrePostProcessor.INPUT_WIDTH;
             float imgScaleY = (float) bitmap.getHeight() / PrePostProcessor.INPUT_HEIGHT;
             float ivScaleX = (float) mResultView.getWidth() / bitmap.getWidth();
             float ivScaleY = (float) mResultView.getHeight() / bitmap.getHeight();
@@ -134,6 +180,6 @@ public class ObjectDetectionActivity extends AbstractCameraXActivity<ObjectDetec
             final ArrayList<Result> results = PrePostProcessor.outputsToPredictions(count, outputs, imgScaleX, imgScaleY, ivScaleX, ivScaleY, 0, 0);
             return new AnalysisResult(results);
         }
-        return null;
-    }
+
 }
+
